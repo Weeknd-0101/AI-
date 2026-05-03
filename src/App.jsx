@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, addDoc, getDocs, query, orderBy, deleteDoc, doc, where } from 'firebase/firestore';
-// 移除了 Firebase Auth 相關套件，因為改用靜態密碼
 
 // ==========================================
 // 1. 設定與初始化
@@ -15,10 +14,8 @@ const firebaseConfig = {
   appId: "1:909084261985:web:61dd8e59e982e6d3577420",
   measurementId: "G-2LF9Y4BHM6"
 };
-
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
-const GEMINI_API_KEY = "YOUR_GEMINI_API_KEY"; 
 
 // ==========================================
 // 2. 樣式定義
@@ -44,13 +41,12 @@ const styles = {
 
 export default function App() {
   const [isAdmin, setIsAdmin] = useState(false);
-  const [loading, setLoading] = useState(false); // 移除 Auth 監聽後，初始不需 loading
+  const [loading, setLoading] = useState(false); 
 
   const handleAdminToggle = () => {
     if (isAdmin) {
       setIsAdmin(false);
     } else {
-      // 依照要求：帳號密碼設為 1234，並給予明確提示
       const acc = prompt("請輸入管理員帳號 (提示: 1234)：");
       const pwd = prompt("請輸入管理員密碼 (提示: 1234)：");
       
@@ -79,7 +75,7 @@ export default function App() {
 }
 
 // ==========================================
-// 3. 顧客端介面 (保持上一版的金流選擇與 AI 邏輯)
+// 3. 顧客端介面
 // ==========================================
 function CustomerView({ db, setLoading }) {
   const [form, setForm] = useState({ dateIn: '', dateOut: '', roomType: '標準雙人房', name: '', phone: '', paymentMethod: '信用卡' });
@@ -94,16 +90,20 @@ function CustomerView({ db, setLoading }) {
     
     setLoading(true);
     
-    const q = query(collection(db, "bookings"), where("roomType", "==", form.roomType), where("dateIn", "==", form.dateIn), where("status", "in", ["已付款", "待付款"]));
-    const snapshot = await getDocs(q);
-    
-    if (!snapshot.empty) {
-      alert('該房型已被預訂');
-      setLoading(false);
-      return;
+    try {
+      const q = query(collection(db, "bookings"), where("roomType", "==", form.roomType), where("dateIn", "==", form.dateIn), where("status", "in", ["已付款", "待付款"]));
+      const snapshot = await getDocs(q);
+      
+      if (!snapshot.empty) {
+        alert('該房型已被預訂');
+        setLoading(false);
+        return;
+      }
+      
+      setPaymentStep(true);
+    } catch(err) {
+      alert("資料庫連線失敗，請檢查 Firestore 規則是否設定為開放讀寫。");
     }
-    
-    setPaymentStep(true);
     setLoading(false);
   };
 
@@ -124,26 +124,23 @@ function CustomerView({ db, setLoading }) {
       setForm({ dateIn: '', dateOut: '', roomType: '標準雙人房', name: '', phone: '', paymentMethod: '信用卡' });
       setPaymentStep(false);
     } catch (error) {
-      alert('系統寫入錯誤');
+      alert('系統寫入錯誤，請確認 Firestore 規則。');
     }
     setLoading(false);
   };
 
- // 3. 顧客端介面 (替換掉原本的 sendChatMessage)
-  const sendChatMessage = async () => {
+  // 假的 AI 客服邏輯 (Mock API)
+  const sendChatMessage = () => {
     if (!chatInput.trim()) return;
 
-    // 1. 先把使用者的訊息顯示出來
     const newHistory = [...chatHistory, { role: 'user', text: chatInput }];
     setChatHistory(newHistory);
     const currentInput = chatInput;
-    setChatInput(''); // 清空輸入框
+    setChatInput(''); 
 
-    // 2. 使用 setTimeout 故意延遲 1 秒，假裝在等 AI 伺服器回應
     setTimeout(() => {
-      let aiText = "這部分的問題我還在學習中，如果是急事，請直接聯繫民宿老闆喔！"; // 預設的敷衍回覆
+      let aiText = "這部分的問題我還在學習中，如果是急事，請直接聯繫民宿老闆喔！"; 
 
-      // 3. 建立假的人工智慧 (關鍵字比對)
       if (currentInput.includes("退費") || currentInput.includes("取消") || currentInput.includes("退款")) {
         aiText = "我們的退費政策是：入住前 7 天取消可全額退費，3 天前取消退還 50%，當天取消則不予退費。";
       } 
@@ -157,34 +154,8 @@ function CustomerView({ db, setLoading }) {
         aiText = "已為您轉接真人客服，請點擊此連結加入官方 Line：https://line.me/ti/p/... 或直接撥打 0900-123-456";
       }
 
-      // 4. 將假的回覆塞回對話框
       setChatHistory(prev => [...prev, { role: 'ai', text: aiText }]);
-    }, 1000); // 1000 毫秒 = 1 秒
-  };
-
-    const newHistory = [...chatHistory, { role: 'user', text: chatInput }];
-    setChatHistory(newHistory);
-    const currentInput = chatInput;
-    setChatInput('');
-
-    try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          system_instruction: {
-            parts: [{ text: "你是台灣某民宿的專業 AI 客服。1. 語氣要有禮貌。2. 僅回答與住宿、房價、周邊景點相關的問題。3. 若使用者詢問政治、無關問題或要求折扣，必須禮貌拒絕並請對方聯繫真人客服。4. 入住時間為 15:00，退房時間為 11:00。" }]
-          },
-          contents: [{ parts: [{ text: currentInput }] }],
-          generationConfig: { temperature: 0.2 } 
-        })
-      });
-      const data = await response.json();
-      const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || "抱歉，系統目前無法回應。";
-      setChatHistory(prev => [...prev, { role: 'ai', text: aiText }]);
-    } catch (error) {
-      setChatHistory(prev => [...prev, { role: 'ai', text: '連線異常。' }]);
-    }
+    }, 1000); 
   };
 
   return (
