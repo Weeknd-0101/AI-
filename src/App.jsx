@@ -129,14 +129,38 @@ function CustomerView({ db, setLoading }) {
     setLoading(false);
   };
 
+ // 3. 顧客端介面 (替換掉原本的 sendChatMessage)
   const sendChatMessage = async () => {
     if (!chatInput.trim()) return;
-    
-    if (chatInput.includes("真人") || chatInput.includes("客訴")) {
-      setChatHistory(prev => [...prev, { role: 'user', text: chatInput }, { role: 'ai', text: '已為您轉接真人客服，請點擊此連結加入官方 Line：https://line.me/... 或撥打 0900-000-000' }]);
-      setChatInput('');
-      return;
-    }
+
+    // 1. 先把使用者的訊息顯示出來
+    const newHistory = [...chatHistory, { role: 'user', text: chatInput }];
+    setChatHistory(newHistory);
+    const currentInput = chatInput;
+    setChatInput(''); // 清空輸入框
+
+    // 2. 使用 setTimeout 故意延遲 1 秒，假裝在等 AI 伺服器回應
+    setTimeout(() => {
+      let aiText = "這部分的問題我還在學習中，如果是急事，請直接聯繫民宿老闆喔！"; // 預設的敷衍回覆
+
+      // 3. 建立假的人工智慧 (關鍵字比對)
+      if (currentInput.includes("退費") || currentInput.includes("取消") || currentInput.includes("退款")) {
+        aiText = "我們的退費政策是：入住前 7 天取消可全額退費，3 天前取消退還 50%，當天取消則不予退費。";
+      } 
+      else if (currentInput.includes("景點") || currentInput.includes("附近") || currentInput.includes("玩")) {
+        aiText = "民宿附近有著名的老街跟生態農場，騎車大約 10 分鐘就可以抵達，晚上還推薦去後山看夜景喔！";
+      } 
+      else if (currentInput.includes("規定") || currentInput.includes("入住") || currentInput.includes("時間")) {
+        aiText = "入住時間為下午 15:00 後，退房為隔日上午 11:00 前。室內全面禁菸，且晚上 10 點後請降低音量避免打擾其他房客。";
+      }
+      else if (currentInput.includes("真人") || currentInput.includes("客訴") || currentInput.includes("老闆")) {
+        aiText = "已為您轉接真人客服，請點擊此連結加入官方 Line：https://line.me/ti/p/... 或直接撥打 0900-123-456";
+      }
+
+      // 4. 將假的回覆塞回對話框
+      setChatHistory(prev => [...prev, { role: 'ai', text: aiText }]);
+    }, 1000); // 1000 毫秒 = 1 秒
+  };
 
     const newHistory = [...chatHistory, { role: 'user', text: chatInput }];
     setChatHistory(newHistory);
