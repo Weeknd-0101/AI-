@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, addDoc, getDocs, query, orderBy, deleteDoc, doc, updateDoc, where } from 'firebase/firestore';
+import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 
 // ==========================================
-// 1. 設定與初始化 (請填入你的金鑰)
+// 1. 設定與初始化
 // ==========================================
 const firebaseConfig = {
   apiKey: "AIzaSyC8PjCBiK3j0YKLNQdhj0M6SCpUt3gF7DQ",
@@ -17,77 +18,70 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
-const GEMINI_API_KEY = "YOUR_GEMINI_API_KEY";
+const auth = getAuth(app);
 
-// 假設民宿總房間數為 10
+// 警告：正式環境中，API Key 必須放在 Node.js 後端，不可寫死在前端
+const GEMINI_API_KEY = "YOUR_GEMINI_API_KEY"; 
 const TOTAL_ROOMS = 10; 
 
 // ==========================================
-// 2. 樣式定義 (Inline CSS)
+// 2. 樣式定義 (保持簡潔)
 // ==========================================
 const styles = {
   app: { fontFamily: 'sans-serif', backgroundColor: '#f4f7f6', minHeight: '100vh', padding: '20px', boxSizing: 'border-box' },
   container: { maxWidth: '1000px', margin: '0 auto' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
-  title: { margin: 0, color: '#333' },
   button: { padding: '8px 16px', borderRadius: '8px', border: 'none', backgroundColor: '#0056b3', color: '#fff', cursor: 'pointer', fontWeight: 'bold' },
   buttonDanger: { backgroundColor: '#dc3545' },
-  buttonSuccess: { backgroundColor: '#28a745' },
   card: { backgroundColor: '#fff', borderRadius: '12px', padding: '20px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', marginBottom: '20px' },
   input: { width: '100%', padding: '10px', margin: '8px 0', borderRadius: '8px', border: '1px solid #ccc', boxSizing: 'border-box' },
-  row: { display: 'flex', gap: '15px', flexWrap: 'wrap' },
-  col: { flex: 1, minWidth: '200px' },
-  // 聊天室樣式
-  chatBox: { height: '300px', overflowY: 'auto', border: '1px solid #eee', borderRadius: '8px', padding: '10px', marginBottom: '10px', backgroundColor: '#fafafa' },
-  bubbleUser: { backgroundColor: '#007bff', color: '#fff', padding: '10px', borderRadius: '15px 15px 0 15px', margin: '5px 0', alignSelf: 'flex-end', maxWidth: '80%', width: 'fit-content', marginLeft: 'auto' },
-  bubbleAi: { backgroundColor: '#e9ecef', color: '#333', padding: '10px', borderRadius: '15px 15px 15px 0', margin: '5px 0', alignSelf: 'flex-start', maxWidth: '80%', width: 'fit-content' },
-  // 儀表板樣式
-  statsGrid: { display: 'flex', gap: '15px', marginBottom: '20px' },
-  statCard: { flex: 1, padding: '20px', borderRadius: '12px', color: '#fff', textAlign: 'center', fontWeight: 'bold' },
-  // 表格樣式
+  chatBox: { height: '300px', overflowY: 'auto', border: '1px solid #eee', padding: '10px', marginBottom: '10px', backgroundColor: '#fafafa' },
+  bubbleUser: { backgroundColor: '#007bff', color: '#fff', padding: '10px', borderRadius: '15px', margin: '5px 0', alignSelf: 'flex-end', marginLeft: 'auto', width: 'fit-content', maxWidth: '80%' },
+  bubbleAi: { backgroundColor: '#e9ecef', color: '#333', padding: '10px', borderRadius: '15px', margin: '5px 0', width: 'fit-content', maxWidth: '80%' },
+  disclaimer: { fontSize: '12px', color: '#888', textAlign: 'center', marginTop: '5px' },
   table: { width: '100%', borderCollapse: 'collapse', marginTop: '10px' },
   th: { borderBottom: '2px solid #ddd', padding: '10px', textAlign: 'left' },
   td: { borderBottom: '1px solid #ddd', padding: '10px' },
-  // 載入遮罩
-  overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(255,255,255,0.9)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999, fontSize: '24px', fontWeight: 'bold', color: '#333' }
+  overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(255,255,255,0.9)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999, fontSize: '24px' }
 };
 
 export default function App() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
-  
+
+  // 監聽 Firebase 登入狀態
   useEffect(() => {
-    const adminState = localStorage.getItem('isAdmin') === 'true';
-    setIsAdmin(adminState);
-    setLoading(false); // 初始載入完成
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setIsAdmin(!!user);
+      setLoading(false);
+    });
+    return () => unsubscribe();
   }, []);
 
-  const toggleAdmin = () => {
+  const handleAdminToggle = () => {
     if (isAdmin) {
-      localStorage.setItem('isAdmin', 'false');
-      setIsAdmin(false);
+      signOut(auth);
     } else {
-      const pwd = prompt("請輸入管理員密碼：");
-      if (pwd === "1234") {
-        localStorage.setItem('isAdmin', 'true');
-        setIsAdmin(true);
-      } else {
-        alert("密碼錯誤");
+      const email = prompt("管理員帳號 (Email)：");
+      const pwd = prompt("管理員密碼：");
+      if (email && pwd) {
+        setLoading(true);
+        signInWithEmailAndPassword(auth, email, pwd)
+          .catch(err => { alert("登入失敗：" + err.message); setLoading(false); });
       }
     }
   };
 
   return (
     <div style={styles.app}>
-      {loading && <div style={styles.overlay}>系統載入中...</div>}
+      {loading && <div style={styles.overlay}>系統處理中...</div>}
       <div style={styles.container}>
         <div style={styles.header}>
-          <h1 style={styles.title}>AI 智慧民宿系統</h1>
-          <button style={styles.button} onClick={toggleAdmin}>
-            {isAdmin ? '切換為顧客端' : '管理員登入'}
+          <h1 style={{ margin: 0, color: '#333' }}>AI 智慧民宿系統</h1>
+          <button style={styles.button} onClick={handleAdminToggle}>
+            {isAdmin ? '登出後台' : '管理員登入'}
           </button>
         </div>
-        
         {isAdmin ? <AdminDashboard db={db} setLoading={setLoading} /> : <CustomerView db={db} setLoading={setLoading} />}
       </div>
     </div>
@@ -95,55 +89,71 @@ export default function App() {
 }
 
 // ==========================================
-// 3. 顧客端介面
+// 3. 顧客端介面 (含 AI 風險控管與模擬金流)
 // ==========================================
 function CustomerView({ db, setLoading }) {
   const [form, setForm] = useState({ dateIn: '', dateOut: '', roomType: '標準雙人房', name: '', phone: '' });
-  const [chatHistory, setChatHistory] = useState([{ role: 'ai', text: '您好！我是 AI 客服，請問有什麼我可以協助您的嗎？' }]);
+  const [chatHistory, setChatHistory] = useState([{ role: 'ai', text: '您好！我是 AI 客服。請問想了解入住規定、退費政策還是周邊景點？' }]);
   const [chatInput, setChatInput] = useState('');
+  const [paymentStep, setPaymentStep] = useState(false);
 
-  // 處理訂房邏輯
-  const handleBooking = async (e) => {
+  // 1. 訂房與金流模擬邏輯
+  const handleBookingInit = async (e) => {
     e.preventDefault();
-    if (!form.dateIn || !form.dateOut || !form.name || !form.phone) return alert('請填寫完整資訊');
-    if (form.dateIn >= form.dateOut) return alert('退房日期必須大於入住日期');
+    if (!form.dateIn || !form.dateOut || !form.name) return alert('資料不完整');
+    setLoading(true);
+    
+    // 查詢空房 (前端弱驗證，正式應交由後端 Transaction)
+    const q = query(collection(db, "bookings"), where("roomType", "==", form.roomType), where("dateIn", "==", form.dateIn), where("status", "in", ["已付款", "待付款"]));
+    const snapshot = await getDocs(q);
+    
+    if (!snapshot.empty) {
+      alert('該房型已被預訂');
+      setLoading(false);
+      return;
+    }
+    
+    // 進入模擬付款環節
+    setPaymentStep(true);
+    setLoading(false);
+  };
 
+  const handleMockPayment = async (isSuccess) => {
+    if (!isSuccess) {
+      setPaymentStep(false);
+      return alert('已取消付款');
+    }
+    
     setLoading(true);
     try {
-      // 驗證是否重複訂房 (邏輯缺陷：併發寫入時仍會產生 Race Condition)
-      const q = query(
-        collection(db, "bookings"), 
-        where("roomType", "==", form.roomType),
-        where("dateIn", "==", form.dateIn)
-      );
-      const querySnapshot = await getDocs(q);
-      
-      if (!querySnapshot.empty) {
-        alert('抱歉，該房型在您選擇的日期已被預訂。');
-        setLoading(false);
-        return;
-      }
-
       await addDoc(collection(db, "bookings"), {
         ...form,
-        status: '未確認',
-        timestamp: new Date()
+        status: '已付款', // 模擬綠界/LINE Pay Webhook 回傳成功後寫入
+        timestamp: new Date().toISOString()
       });
-      alert('訂房申請已送出！');
+      alert('付款成功！訂單已成立。');
       setForm({ dateIn: '', dateOut: '', roomType: '標準雙人房', name: '', phone: '' });
+      setPaymentStep(false);
     } catch (error) {
-      console.error(error);
-      alert('發生錯誤');
+      alert('系統寫入錯誤');
     }
     setLoading(false);
   };
 
-  // 呼叫 Gemini API
+  // 2. AI 智慧客服邏輯 (導入邊界限制)
   const sendChatMessage = async () => {
     if (!chatInput.trim()) return;
     
+    // 觸發人工接管機制
+    if (chatInput.includes("真人") || chatInput.includes("客訴")) {
+      setChatHistory(prev => [...prev, { role: 'user', text: chatInput }, { role: 'ai', text: '已為您轉接真人客服，請點擊此連結加入官方 Line：https://line.me/... 或撥打 0900-000-000' }]);
+      setChatInput('');
+      return;
+    }
+
     const newHistory = [...chatHistory, { role: 'user', text: chatInput }];
     setChatHistory(newHistory);
+    const currentInput = chatInput;
     setChatInput('');
 
     try {
@@ -151,65 +161,62 @@ function CustomerView({ db, setLoading }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: `你是一個民宿客服機器人。請簡短回答以下問題：${chatInput}` }] }]
+          // 導入系統級別人設與限制
+          system_instruction: {
+            parts: [{ text: "你是台灣某民宿的專業 AI 客服。1. 語氣要有禮貌。2. 僅回答與住宿、房價、周邊景點相關的問題。3. 若使用者詢問政治、無關問題或要求折扣，必須禮貌拒絕並請對方聯繫真人客服。4. 不要隨便捏造價格，若不確定請回答「具體價格需視日期而定，請透過訂房系統查詢」。" }]
+          },
+          contents: [{ parts: [{ text: currentInput }] }],
+          generationConfig: { temperature: 0.2 } // 降低隨機性防幻覺
         })
       });
       const data = await response.json();
-      const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || "抱歉，我目前無法回應。";
+      const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || "抱歉，系統目前無法回應。";
       setChatHistory(prev => [...prev, { role: 'ai', text: aiText }]);
     } catch (error) {
-      setChatHistory(prev => [...prev, { role: 'ai', text: '系統連線異常，請稍後再試。' }]);
+      setChatHistory(prev => [...prev, { role: 'ai', text: '連線異常。' }]);
     }
   };
 
   return (
-    <div>
-      <div style={styles.card}>
+    <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+      <div style={{ ...styles.card, flex: 1, minWidth: '300px' }}>
         <h3>AI 智慧客服</h3>
         <div style={styles.chatBox}>
           {chatHistory.map((msg, i) => (
-            <div key={i} style={msg.role === 'user' ? styles.bubbleUser : styles.bubbleAi}>
-              {msg.text}
-            </div>
+            <div key={i} style={msg.role === 'user' ? styles.bubbleUser : styles.bubbleAi}>{msg.text}</div>
           ))}
         </div>
         <div style={{ display: 'flex', gap: '10px' }}>
-          <input style={styles.input} value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyPress={e => e.key === 'Enter' && sendChatMessage()} placeholder="詢問入住規定、周邊景點..." />
+          <input style={styles.input} value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyPress={e => e.key === 'Enter' && sendChatMessage()} />
           <button style={styles.button} onClick={sendChatMessage}>發送</button>
         </div>
+        <div style={styles.disclaimer}>※ AI 助理回覆僅供參考，若遇消費糾紛請聯繫真人客服。</div>
       </div>
 
-      <div style={styles.card}>
+      <div style={{ ...styles.card, flex: 1, minWidth: '300px' }}>
         <h3>線上訂房</h3>
-        <form onSubmit={handleBooking}>
-          <div style={styles.row}>
-            <div style={styles.col}>
-              <label>入住日期</label>
-              <input type="date" style={styles.input} value={form.dateIn} onChange={e => setForm({...form, dateIn: e.target.value})} />
-            </div>
-            <div style={styles.col}>
-              <label>退房日期</label>
-              <input type="date" style={styles.input} value={form.dateOut} onChange={e => setForm({...form, dateOut: e.target.value})} />
-            </div>
-          </div>
-          <div style={styles.row}>
-            <div style={styles.col}>
-              <label>房型</label>
-              <select style={styles.input} value={form.roomType} onChange={e => setForm({...form, roomType: e.target.value})}>
+        {!paymentStep ? (
+          <form onSubmit={handleBookingInit}>
+             <input type="date" style={styles.input} value={form.dateIn} onChange={e => setForm({...form, dateIn: e.target.value})} required />
+             <input type="date" style={styles.input} value={form.dateOut} onChange={e => setForm({...form, dateOut: e.target.value})} required />
+             <select style={styles.input} value={form.roomType} onChange={e => setForm({...form, roomType: e.target.value})}>
                 <option value="標準雙人房">標準雙人房</option>
                 <option value="豪華四人房">豪華四人房</option>
-                <option value="家庭包棟">家庭包棟</option>
-              </select>
-            </div>
-            <div style={styles.col}>
-              <label>姓名</label>
-              <input type="text" style={styles.input} value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
+             </select>
+             <input type="text" placeholder="姓名" style={styles.input} value={form.name} onChange={e => setForm({...form, name: e.target.value})} required />
+             <input type="text" placeholder="電話" style={styles.input} value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} required />
+             <button type="submit" style={{...styles.button, width: '100%'}}>前往結帳</button>
+          </form>
+        ) : (
+          <div style={{ textAlign: 'center', padding: '20px' }}>
+            <h4>即將跳轉第三方金流 (模擬)</h4>
+            <p>訂單：{form.roomType} | {form.dateIn} 入住</p>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+              <button style={{...styles.button, backgroundColor: '#28a745'}} onClick={() => handleMockPayment(true)}>模擬付款成功</button>
+              <button style={{...styles.button, ...styles.buttonDanger}} onClick={() => handleMockPayment(false)}>取消</button>
             </div>
           </div>
-          <label>聯絡電話</label>
-          <input type="text" style={styles.input} value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} />
-          <button type="submit" style={{...styles.button, width: '100%', marginTop: '10px'}}>送出訂單</button>
-        </form>
+        )}
       </div>
     </div>
   );
@@ -226,23 +233,14 @@ function AdminDashboard({ db, setLoading }) {
     try {
       const q = query(collection(db, "bookings"), orderBy("timestamp", "desc"));
       const snapshot = await getDocs(q);
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setOrders(data);
+      setOrders(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     } catch (error) {
-      console.error("讀取失敗", error);
+      alert("讀取失敗，請確認 Firebase 權限。");
     }
     setLoading(false);
   };
 
-  useEffect(() => {
-    fetchOrders();
-  }, []);
-
-  const toggleStatus = async (id, currentStatus) => {
-    const newStatus = currentStatus === '已確認' ? '未確認' : '已確認';
-    await updateDoc(doc(db, "bookings", id), { status: newStatus });
-    fetchOrders();
-  };
+  useEffect(() => { fetchOrders(); }, []);
 
   const deleteOrder = async (id) => {
     if (window.confirm("確定刪除此訂單？")) {
@@ -251,54 +249,33 @@ function AdminDashboard({ db, setLoading }) {
     }
   };
 
-  // 統計數據計算
-  const today = new Date().toISOString().split('T')[0];
-  const todayCheckIns = orders.filter(o => o.dateIn === today).length;
-  // 簡化的剩餘空房邏輯：總房數 - 今日入住數
-  const availableRooms = TOTAL_ROOMS - todayCheckIns; 
-
   return (
-    <div>
-      <div style={styles.statsGrid}>
-        <div style={{...styles.statCard, backgroundColor: '#17a2b8'}}>總訂單數<br/>{orders.length}</div>
-        <div style={{...styles.statCard, backgroundColor: '#28a745'}}>今日入住<br/>{todayCheckIns}</div>
-        <div style={{...styles.statCard, backgroundColor: '#ffc107', color: '#000'}}>剩餘空房<br/>{availableRooms}</div>
-      </div>
-
-      <div style={styles.card}>
-        <h3>訂單管理列表</h3>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>日期區間</th>
-                <th style={styles.th}>房型</th>
-                <th style={styles.th}>客戶資訊</th>
-                <th style={styles.th}>狀態</th>
-                <th style={styles.th}>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {orders.map(order => (
-                <tr key={order.id}>
-                  <td style={styles.td}>{order.dateIn} ~ {order.dateOut}</td>
-                  <td style={styles.td}>{order.roomType}</td>
-                  <td style={styles.td}>{order.name} ({order.phone})</td>
-                  <td style={styles.td}>
-                    <span style={{ color: order.status === '已確認' ? 'green' : 'red', fontWeight: 'bold' }}>
-                      {order.status}
-                    </span>
-                  </td>
-                  <td style={styles.td}>
-                    <button style={{...styles.button, ...styles.buttonSuccess, marginRight: '5px', padding: '5px 10px'}} onClick={() => toggleStatus(order.id, order.status)}>切換狀態</button>
-                    <button style={{...styles.button, ...styles.buttonDanger, padding: '5px 10px'}} onClick={() => deleteOrder(order.id)}>刪除</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+    <div style={styles.card}>
+      <h3>訂單管理列表 (授權存取)</h3>
+      <table style={styles.table}>
+        <thead>
+          <tr>
+            <th style={styles.th}>日期區間</th>
+            <th style={styles.th}>房型</th>
+            <th style={styles.th}>客戶資訊</th>
+            <th style={styles.th}>金流狀態</th>
+            <th style={styles.th}>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {orders.map(o => (
+            <tr key={o.id}>
+              <td style={styles.td}>{o.dateIn} ~ {o.dateOut}</td>
+              <td style={styles.td}>{o.roomType}</td>
+              <td style={styles.td}>{o.name} ({o.phone})</td>
+              <td style={styles.td}><strong style={{ color: o.status === '已付款' ? 'green' : 'orange' }}>{o.status}</strong></td>
+              <td style={styles.td}>
+                <button style={{...styles.button, ...styles.buttonDanger, padding: '4px 8px'}} onClick={() => deleteOrder(o.id)}>刪除</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
