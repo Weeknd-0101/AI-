@@ -7,12 +7,13 @@ import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from
 // 1. 設定與初始化 (請填入你的金鑰)
 // ==========================================
 const firebaseConfig = {
-  apiKey: "YOUR_FIREBASE_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyC8PjCBiK3j0YKLNQdhj0M6SCpUt3gF7DQ",
+  authDomain: "ai-homework-5dcf3.firebaseapp.com",
+  projectId: "ai-homework-5dcf3",
+  storageBucket: "ai-homework-5dcf3.firebasestorage.app",
+  messagingSenderId: "909084261985",
+  appId: "1:909084261985:web:61dd8e59e982e6d3577420",
+  measurementId: "G-2LF9Y4BHM6"
 };
 
 const app = initializeApp(firebaseConfig);
