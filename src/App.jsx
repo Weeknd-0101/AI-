@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, addDoc, getDocs, query, orderBy, deleteDoc, doc, updateDoc, where } from 'firebase/firestore';
-import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
+import { getFirestore, collection, addDoc, getDocs, query, orderBy, deleteDoc, doc, where } from 'firebase/firestore';
+// 移除了 Firebase Auth 相關套件，因為改用靜態密碼
 
 // ==========================================
-// 1. 設定與初始化 (請填入你的金鑰)
+// 1. 設定與初始化
 // ==========================================
 const firebaseConfig = {
   apiKey: "AIzaSyC8PjCBiK3j0YKLNQdhj0M6SCpUt3gF7DQ",
@@ -18,8 +18,6 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
-const auth = getAuth(app);
-
 const GEMINI_API_KEY = "YOUR_GEMINI_API_KEY"; 
 
 // ==========================================
@@ -46,26 +44,20 @@ const styles = {
 
 export default function App() {
   const [isAdmin, setIsAdmin] = useState(false);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setIsAdmin(!!user);
-      setLoading(false);
-    });
-    return () => unsubscribe();
-  }, []);
+  const [loading, setLoading] = useState(false); // 移除 Auth 監聽後，初始不需 loading
 
   const handleAdminToggle = () => {
     if (isAdmin) {
-      signOut(auth);
+      setIsAdmin(false);
     } else {
-      const email = prompt("管理員帳號 (Email)：");
-      const pwd = prompt("管理員密碼：");
-      if (email && pwd) {
-        setLoading(true);
-        signInWithEmailAndPassword(auth, email, pwd)
-          .catch(err => { alert("登入失敗：" + err.message); setLoading(false); });
+      // 依照要求：帳號密碼設為 1234，並給予明確提示
+      const acc = prompt("請輸入管理員帳號 (提示: 1234)：");
+      const pwd = prompt("請輸入管理員密碼 (提示: 1234)：");
+      
+      if (acc === "1234" && pwd === "1234") {
+        setIsAdmin(true);
+      } else {
+        alert("帳號或密碼錯誤，請輸入 1234。");
       }
     }
   };
@@ -87,10 +79,9 @@ export default function App() {
 }
 
 // ==========================================
-// 3. 顧客端介面
+// 3. 顧客端介面 (保持上一版的金流選擇與 AI 邏輯)
 // ==========================================
 function CustomerView({ db, setLoading }) {
-  // 狀態新增 paymentMethod
   const [form, setForm] = useState({ dateIn: '', dateOut: '', roomType: '標準雙人房', name: '', phone: '', paymentMethod: '信用卡' });
   const [chatHistory, setChatHistory] = useState([{ role: 'ai', text: '您好！我是 AI 客服。請問想了解入住規定、退費政策還是周邊景點？' }]);
   const [chatInput, setChatInput] = useState('');
@@ -192,7 +183,6 @@ function CustomerView({ db, setLoading }) {
         <h3>線上訂房</h3>
         {!paymentStep ? (
           <form onSubmit={handleBookingInit}>
-             {/* 明示入住與退房時間 */}
              <div style={styles.infoBox}>
                <strong>🕒 住宿時間規範：</strong><br/>
                入住時間：當日下午 15:00 後<br/>
@@ -217,7 +207,6 @@ function CustomerView({ db, setLoading }) {
                 <option value="家庭包棟">家庭包棟</option>
              </select>
 
-             {/* 新增付款方式選擇 */}
              <label style={{ fontSize: '12px', color: '#666' }}>付款方式</label>
              <select style={styles.input} value={form.paymentMethod} onChange={e => setForm({...form, paymentMethod: e.target.value})}>
                 <option value="信用卡">信用卡 (支援 VISA / MasterCard)</option>
@@ -271,7 +260,7 @@ function AdminDashboard({ db, setLoading }) {
       const snapshot = await getDocs(q);
       setOrders(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     } catch (error) {
-      alert("讀取失敗，請確認 Firebase 權限。");
+      alert("讀取失敗。若您變更了 Firestore 規則，請確認目前為開發模式。");
     }
     setLoading(false);
   };
@@ -287,14 +276,13 @@ function AdminDashboard({ db, setLoading }) {
 
   return (
     <div style={styles.card}>
-      <h3>訂單管理列表 (授權存取)</h3>
+      <h3>訂單管理列表</h3>
       <table style={styles.table}>
         <thead>
           <tr>
             <th style={styles.th}>日期區間</th>
             <th style={styles.th}>房型</th>
             <th style={styles.th}>客戶資訊</th>
-            {/* 新增付款方式欄位 */}
             <th style={styles.th}>付款方式</th>
             <th style={styles.th}>狀態</th>
             <th style={styles.th}>操作</th>
