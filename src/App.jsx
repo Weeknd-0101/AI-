@@ -18,11 +18,23 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// 定義房型價格
-const ROOM_PRICES = {
-  '標準雙人房': 2000,
-  '豪華四人房': 3800,
-  '家庭包棟': 12000
+// 定義房型詳細資訊
+const ROOM_INFO = {
+  '標準雙人房': {
+    price: 2000,
+    desc: '適合情侶或背包客。附獨立衛浴、雙人加大床墊、免費 Wi-Fi 與基本盥洗用品。窗外可見田園風光。',
+    imgColor: '#a8d5e2'
+  },
+  '豪華四人房': {
+    price: 3800,
+    desc: '家庭旅遊首選。兩張標準雙人床、乾濕分離衛浴、專屬小陽台。空間寬敞，提供兒童澡盆租借。',
+    imgColor: '#f9a826'
+  },
+  '家庭包棟': {
+    price: 12000,
+    desc: '獨享整棟空間，至多可容納 12 人。含 3 間臥室、開放式廚房、KTV 伴唱設備及戶外烤肉區。',
+    imgColor: '#ff7b54'
+  }
 };
 
 // ==========================================
@@ -38,13 +50,20 @@ const styles = {
   input: { width: '100%', padding: '10px', margin: '8px 0', borderRadius: '8px', border: '1px solid #ccc', boxSizing: 'border-box' },
   infoBox: { backgroundColor: '#e9ecef', padding: '10px', borderRadius: '8px', fontSize: '14px', color: '#555', marginBottom: '15px' },
   promoBox: { backgroundColor: '#fff3cd', color: '#856404', border: '1px solid #ffeeba', borderRadius: '8px', padding: '15px', marginBottom: '20px' },
-  promoTitle: { margin: '0 0 10px 0', fontSize: '16px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' },
-  promoTag: { backgroundColor: '#dc3545', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' },
   priceBoard: { backgroundColor: '#f8f9fa', border: '1px solid #ddd', padding: '15px', borderRadius: '8px', marginTop: '15px', fontSize: '14px' },
+  
+  // 房型卡片樣式
+  roomGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginBottom: '15px' },
+  roomCard: { border: '2px solid #eee', borderRadius: '8px', overflow: 'hidden', cursor: 'pointer', transition: '0.2s' },
+  roomCardSelected: { border: '2px solid #0056b3', backgroundColor: '#f0f8ff' },
+  roomImg: { height: '120px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 'bold', fontSize: '18px' },
+  roomContent: { padding: '10px' },
+  roomTitle: { margin: '0 0 5px 0', fontSize: '16px', fontWeight: 'bold' },
+  roomDesc: { margin: 0, fontSize: '12px', color: '#666', lineHeight: '1.4', height: '50px', overflow: 'hidden' },
+  
   chatBox: { height: '300px', overflowY: 'auto', border: '1px solid #eee', padding: '10px', marginBottom: '10px', backgroundColor: '#fafafa' },
   bubbleUser: { backgroundColor: '#007bff', color: '#fff', padding: '10px', borderRadius: '15px', margin: '5px 0', alignSelf: 'flex-end', marginLeft: 'auto', width: 'fit-content', maxWidth: '80%' },
   bubbleAi: { backgroundColor: '#e9ecef', color: '#333', padding: '10px', borderRadius: '15px', margin: '5px 0', width: 'fit-content', maxWidth: '80%' },
-  disclaimer: { fontSize: '12px', color: '#888', textAlign: 'center', marginTop: '5px' },
   table: { width: '100%', borderCollapse: 'collapse', marginTop: '10px' },
   th: { borderBottom: '2px solid #ddd', padding: '10px', textAlign: 'left', fontSize: '14px' },
   td: { borderBottom: '1px solid #ddd', padding: '10px', fontSize: '14px' },
@@ -90,65 +109,78 @@ function CustomerView({ db, setLoading }) {
     dateIn: '', dateOut: '', roomType: '標準雙人房', 
     name: '', phone: '', paymentMethod: '信用卡', promoCode: '' 
   });
+  
+  // 空房檢查狀態
+  const [roomStatus, setRoomStatus] = useState(null); // null, 'checking', 'available', 'full'
+
   const [chatHistory, setChatHistory] = useState([{ role: 'ai', text: '您好！我是 AI 客服。想知道房價或隱藏優惠嗎？' }]);
   const [chatInput, setChatInput] = useState('');
   const [paymentStep, setPaymentStep] = useState(false);
-  
-  // 查詢訂單用的狀態
   const [queryPhone, setQueryPhone] = useState('');
   const [queryResults, setQueryResults] = useState([]);
   const [hasQueried, setHasQueried] = useState(false);
 
+  // 當日期或房型改變時，重置空房狀態
+  useEffect(() => {
+    setRoomStatus(null);
+  }, [form.dateIn, form.dateOut, form.roomType]);
+
   // 計算價格邏輯
   const calculatePrice = () => {
     if (!form.dateIn || !form.dateOut) return { nights: 0, base: 0, discount: 0, total: 0 };
-    
     const d1 = new Date(form.dateIn);
     const d2 = new Date(form.dateOut);
-    const timeDiff = d2.getTime() - d1.getTime();
-    const nights = Math.ceil(timeDiff / (1000 * 3600 * 24));
+    const nights = Math.ceil((d2.getTime() - d1.getTime()) / (1000 * 3600 * 24));
     
     if (nights <= 0) return { nights: 0, base: 0, discount: 0, total: 0 };
 
-    const basePrice = ROOM_PRICES[form.roomType] * nights;
+    const basePrice = ROOM_INFO[form.roomType].price * nights;
     let discountAmt = 0;
 
-    // 優惠規則判斷
-    if (form.promoCode === 'SUMMER88' && form.roomType === '家庭包棟') {
-      discountAmt = basePrice * 0.12; // 打 88 折 (折扣 12%)
-    } else if (form.promoCode === 'AI500') {
-      discountAmt = 500;
-    }
+    if (form.promoCode === 'SUMMER88' && form.roomType === '家庭包棟') discountAmt = basePrice * 0.12;
+    else if (form.promoCode === 'AI500') discountAmt = 500;
 
     let total = basePrice - discountAmt;
     if (total < 0) total = 0;
-
     return { nights, base: basePrice, discount: discountAmt, total };
   };
 
   const priceData = calculatePrice();
 
-  // 處理訂房
-  const handleBookingInit = async (e) => {
-    e.preventDefault();
-    if (!form.dateIn || !form.dateOut || !form.name) return alert('資料不完整');
+  // 執行空房查詢
+  const checkAvailability = async () => {
+    if (!form.dateIn || !form.dateOut) return alert('請先選擇入住與退房日期');
     if (priceData.nights <= 0) return alert('退房日期必須晚於入住日期');
-    
-    setLoading(true);
+
+    setRoomStatus('checking');
     try {
-      const q = query(collection(db, "bookings"), where("roomType", "==", form.roomType), where("dateIn", "==", form.dateIn), where("status", "in", ["已付款", "待付款"]));
+      // 這裡採用最簡化的防呆查詢：只要選擇的區間內，該房型有訂單，就視為客滿。
+      // (正式環境需要比對完整的日期交集，這裡做雛形展示)
+      const q = query(collection(db, "bookings"), 
+        where("roomType", "==", form.roomType), 
+        where("dateIn", "==", form.dateIn),
+        where("status", "in", ["已付款", "待付款"])
+      );
       const snapshot = await getDocs(q);
       
       if (!snapshot.empty) {
-        alert('該房型在所選日期已被預訂');
-        setLoading(false);
-        return;
+        setRoomStatus('full');
+      } else {
+        setRoomStatus('available');
       }
-      setPaymentStep(true);
     } catch(err) {
-      alert("資料庫連線失敗，請檢查 Firestore 規則。");
+      alert("查詢失敗，請檢查網路狀態。");
+      setRoomStatus(null);
     }
-    setLoading(false);
+  };
+
+  // 處理訂房 (修改為必須先確認有空房才能送出)
+  const handleBookingInit = async (e) => {
+    e.preventDefault();
+    if (!form.dateIn || !form.dateOut || !form.name) return alert('資料不完整');
+    if (roomStatus !== 'available') return alert('請先點擊「檢查空房」，確認尚有空房後再送出訂單');
+    
+    setPaymentStep(true);
   };
 
   const handleMockPayment = async (isSuccess) => {
@@ -168,15 +200,13 @@ function CustomerView({ db, setLoading }) {
       alert('付款成功！訂單已成立。');
       setForm({ dateIn: '', dateOut: '', roomType: '標準雙人房', name: '', phone: '', paymentMethod: '信用卡', promoCode: '' });
       setPaymentStep(false);
-      setQueryResults([]); 
-      setHasQueried(false);
+      setRoomStatus(null);
     } catch (error) {
       alert('系統寫入錯誤。');
     }
     setLoading(false);
   };
 
-  // 假的 AI 客服邏輯 (Mock API)
   const sendChatMessage = () => {
     if (!chatInput.trim()) return;
     const newHistory = [...chatHistory, { role: 'user', text: chatInput }];
@@ -220,12 +250,9 @@ function CustomerView({ db, setLoading }) {
   return (
     <div>
       <div style={styles.promoBox}>
-        <h3 style={styles.promoTitle}>
-          🎉 本月限定優惠活動 <span style={styles.promoTag}>HOT</span>
-        </h3>
+        <h3 style={styles.promoTitle}>🎉 本月限定優惠活動 <span style={styles.promoTag}>HOT</span></h3>
         <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '14px', lineHeight: '1.6' }}>
           <li><strong>【暑期早鳥專案】</strong>預訂「家庭包棟」，結帳輸入代碼 <code style={{backgroundColor: '#fff', padding: '2px 4px'}}>SUMMER88</code> 享 88 折！</li>
-          <li><strong>【AI 客服專屬禮】</strong>跟 AI 客服聊天，或許能問到<strong style={{color: '#dc3545'}}>隱藏版折價券碼</strong>喔！</li>
         </ul>
       </div>
 
@@ -243,11 +270,12 @@ function CustomerView({ db, setLoading }) {
           </div>
         </div>
 
-        <div style={{ ...styles.card, flex: 1, minWidth: '300px', marginBottom: 0 }}>
-          <h3>線上訂房</h3>
+        <div style={{ ...styles.card, flex: 1, minWidth: '350px', marginBottom: 0 }}>
+          <h3>線上訂房與空房查詢</h3>
           {!paymentStep ? (
             <form onSubmit={handleBookingInit}>
-               <div style={{ display: 'flex', gap: '10px' }}>
+               
+               <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
                  <div style={{ flex: 1 }}>
                    <label style={{ fontSize: '12px', color: '#666' }}>入住日期</label>
                    <input type="date" style={styles.input} value={form.dateIn} onChange={e => setForm({...form, dateIn: e.target.value})} required />
@@ -258,17 +286,38 @@ function CustomerView({ db, setLoading }) {
                  </div>
                </div>
 
-               <label style={{ fontSize: '12px', color: '#666' }}>房型選擇</label>
-               <select style={styles.input} value={form.roomType} onChange={e => setForm({...form, roomType: e.target.value})}>
-                  <option value="標準雙人房">標準雙人房 (NT$ 2,000/晚)</option>
-                  <option value="豪華四人房">豪華四人房 (NT$ 3,800/晚)</option>
-                  <option value="家庭包棟">家庭包棟 (NT$ 12,000/晚)</option>
-               </select>
+               <label style={{ fontSize: '12px', color: '#666', display: 'block', marginBottom: '5px' }}>請選擇房型</label>
+               {/* 房型卡片區塊 */}
+               <div style={styles.roomGrid}>
+                 {Object.entries(ROOM_INFO).map(([type, info]) => (
+                   <div 
+                     key={type}
+                     style={{ ...styles.roomCard, ...(form.roomType === type ? styles.roomCardSelected : {}) }}
+                     onClick={() => setForm({...form, roomType: type})}
+                   >
+                     <div style={{...styles.roomImg, backgroundColor: info.imgColor}}>{type}</div>
+                     <div style={styles.roomContent}>
+                       <h4 style={styles.roomTitle}>{type}</h4>
+                       <div style={{ color: '#dc3545', fontWeight: 'bold', fontSize: '14px', marginBottom: '5px' }}>NT$ {info.price} /晚</div>
+                       <p style={styles.roomDesc}>{info.desc}</p>
+                     </div>
+                   </div>
+                 ))}
+               </div>
+
+               {/* 空房查詢按鈕與狀態顯示 */}
+               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '15px', padding: '10px', backgroundColor: '#f8f9fa', borderRadius: '8px' }}>
+                 <button type="button" style={{...styles.button, backgroundColor: '#6c757d'}} onClick={checkAvailability}>
+                   {roomStatus === 'checking' ? '查詢中...' : '檢查此區間空房'}
+                 </button>
+                 {roomStatus === 'available' && <span style={{color: '#28a745', fontWeight: 'bold'}}>✅ 恭喜！尚有空房，請繼續填寫資料。</span>}
+                 {roomStatus === 'full' && <span style={{color: '#dc3545', fontWeight: 'bold'}}>❌ 抱歉，該房型於此區間已客滿。</span>}
+                 {roomStatus === null && <span style={{color: '#888', fontSize: '12px'}}>← 送出前需先檢查</span>}
+               </div>
 
                <label style={{ fontSize: '12px', color: '#666' }}>優惠代碼 (選填)</label>
                <input type="text" placeholder="若有折扣碼請輸入" style={styles.input} value={form.promoCode} onChange={e => setForm({...form, promoCode: e.target.value.toUpperCase()})} />
 
-               {/* 即時金額試算看板 */}
                <div style={styles.priceBoard}>
                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
                    <span>住宿天數：</span><span>{priceData.nights} 晚</span>
@@ -305,7 +354,14 @@ function CustomerView({ db, setLoading }) {
                   <option value="ATM 轉帳">ATM 轉帳</option>
                </select>
 
-               <button type="submit" style={{...styles.button, width: '100%', marginTop: '10px'}}>前往結帳</button>
+               {/* 只有在 available 的狀態下，按鈕才會變成藍色可按 */}
+               <button 
+                 type="submit" 
+                 style={{...styles.button, width: '100%', marginTop: '10px', backgroundColor: roomStatus === 'available' ? '#0056b3' : '#ccc'}}
+                 disabled={roomStatus !== 'available'}
+               >
+                 {roomStatus === 'available' ? '送出訂單並前往結帳' : '請先完成空房檢查'}
+               </button>
             </form>
           ) : (
             <div style={{ textAlign: 'center', padding: '20px' }}>
@@ -323,7 +379,6 @@ function CustomerView({ db, setLoading }) {
         </div>
       </div>
 
-      {/* 訂單查詢 */}
       <div style={styles.card}>
         <h3>訂單查詢系統</h3>
         <form onSubmit={handleQueryOrder} style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
