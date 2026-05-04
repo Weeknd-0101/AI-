@@ -174,8 +174,17 @@ function CustomerView({ db, setLoading }) {
     setChatInput(''); 
     setTimeout(() => {
       let aiText = "這部分的問題我還在學習中，如果是急事，請直接聯繫民宿老闆喔！"; 
-      if (currentInput.includes("優惠") || currentInput.includes("折扣")) {
-        aiText = "現在結帳時輸入隱藏代碼『AI500』，住宿費可以直接折抵 500 元喔！家庭包棟的話可以輸入『SUMMER88』享 88 折！";
+      if (currentInput.includes("退費") || currentInput.includes("取消")) {
+        aiText = "我們的退費政策是：入住前 3 天取消可全額退費";
+      } 
+      else if (currentInput.includes("景點") || currentInput.includes("附近")) {
+        aiText = "民宿附近有著名的老街跟生態農場，騎車大約 10 分鐘就可以抵達喔！";
+      } 
+      else if (currentInput.includes("規定") || currentInput.includes("時間")) {
+        aiText = "入住時間為下午 15:00 後，退房為隔日上午 11:00 前。";
+      }
+      else if (currentInput.includes("優惠") || currentInput.includes("折扣") || currentInput.includes("便宜")) {
+        aiText = "偷偷告訴你，現在結帳時輸入隱藏代碼『AI500』，住宿費可以直接折抵 500 元喔！家庭包棟的話可以輸入『SUMMER88』享 88 折！";
       }
       setChatHistory(prev => [...prev, { role: 'ai', text: aiText }]);
     }, 1000); 
