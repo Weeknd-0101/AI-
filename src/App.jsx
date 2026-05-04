@@ -35,8 +35,12 @@ const styles = {
   buttonDanger: { backgroundColor: '#dc3545' },
   card: { backgroundColor: '#fff', borderRadius: '12px', padding: '20px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', marginBottom: '20px' },
   input: { width: '100%', padding: '10px', margin: '8px 0', borderRadius: '8px', border: '1px solid #ccc', boxSizing: 'border-box' },
-  infoBox: { backgroundColor: '#e9ecef', padding: '10px', borderRadius: '8px', fontSize: '14px', color: '#555', marginBottom: '15px' },
+  
+  // 促銷區塊樣式 (已保留)
   promoBox: { backgroundColor: '#fff3cd', color: '#856404', border: '1px solid #ffeeba', borderRadius: '8px', padding: '15px', marginBottom: '20px' },
+  promoTitle: { margin: '0 0 10px 0', fontSize: '16px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' },
+  promoTag: { backgroundColor: '#dc3545', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' },
+  
   priceBoard: { backgroundColor: '#f8f9fa', border: '1px solid #ddd', padding: '15px', borderRadius: '8px', marginTop: '15px', fontSize: '14px', transition: '0.3s' },
   
   roomGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginBottom: '15px' },
@@ -54,7 +58,6 @@ const styles = {
   th: { borderBottom: '2px solid #ddd', padding: '10px', textAlign: 'left', fontSize: '14px' },
   td: { borderBottom: '1px solid #ddd', padding: '10px', fontSize: '14px' },
   
-  // 後台統計看板樣式
   statsGrid: { display: 'flex', gap: '15px', marginBottom: '20px' },
   statCard: { flex: 1, padding: '20px', borderRadius: '12px', color: '#fff', textAlign: 'center', fontWeight: 'bold' },
   
@@ -104,7 +107,6 @@ function CustomerView({ db, setLoading }) {
 
   useEffect(() => { setRoomStatus(null); }, [form.dateIn, form.dateOut, form.roomType]);
 
-  // 動態計算價格邏輯
   const calculatePrice = () => {
     if (!form.dateIn || !form.dateOut) return { nights: 0, base: 0, discount: 0, total: 0, msg: '' };
     const d1 = new Date(form.dateIn);
@@ -117,7 +119,6 @@ function CustomerView({ db, setLoading }) {
     let discountAmt = 0;
     let discountMsg = '';
 
-    // 強化優惠碼的反饋機制
     if (form.promoCode === 'SUMMER88') {
       if (form.roomType === '家庭包棟') {
         discountAmt = Math.round(basePrice * 0.12);
@@ -171,7 +172,6 @@ function CustomerView({ db, setLoading }) {
     }
     setLoading(true);
     try {
-      // 寫入資料庫時強制使用計算出的價格，防範前端輸入框竄改
       await addDoc(collection(db, "bookings"), {
         ...form,
         nights: priceData.nights,
@@ -206,6 +206,15 @@ function CustomerView({ db, setLoading }) {
 
   return (
     <div>
+      {/* 恢復：促銷橫幅區塊 */}
+      <div style={styles.promoBox}>
+        <h3 style={styles.promoTitle}>🎉 本月限定優惠活動 <span style={styles.promoTag}>HOT</span></h3>
+        <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '14px', lineHeight: '1.6' }}>
+          <li><strong>【暑期早鳥專案】</strong>預訂「家庭包棟」，結帳輸入代碼 <code style={{backgroundColor: '#fff', padding: '2px 4px'}}>SUMMER88</code> 享 88 折！</li>
+          <li><strong>【AI 客服專屬禮】</strong>跟 AI 客服聊天，或許能問到<strong style={{color: '#dc3545'}}>隱藏版折價券碼</strong>喔！</li>
+        </ul>
+      </div>
+
       <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', marginBottom: '20px' }}>
         <div style={{ ...styles.card, flex: 1, minWidth: '300px', marginBottom: 0 }}>
           <h3>AI 智慧客服</h3>
@@ -254,7 +263,6 @@ function CustomerView({ db, setLoading }) {
                  {roomStatus === 'full' && <span style={{color: '#dc3545', fontWeight: 'bold'}}>❌ 已客滿</span>}
                </div>
 
-               {/* 優惠碼輸入與動態反饋區 */}
                <label style={{ fontSize: '12px', color: '#666' }}>優惠代碼 (輸入即自動試算)</label>
                <input type="text" placeholder="例: SUMMER88 或 AI500" style={styles.input} value={form.promoCode} onChange={e => setForm({...form, promoCode: e.target.value.toUpperCase()})} />
                {priceData.msg && (
@@ -309,7 +317,7 @@ function CustomerView({ db, setLoading }) {
 }
 
 // ==========================================
-// 4. 進階管理者端介面 (含營收統計與狀態流轉)
+// 4. 進階管理者端介面
 // ==========================================
 function AdminDashboard({ db, setLoading }) {
   const [orders, setOrders] = useState([]);
@@ -323,7 +331,6 @@ function AdminDashboard({ db, setLoading }) {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setOrders(data);
       
-      // 計算營收統計 (排除已取消的訂單)
       let revenue = 0;
       data.forEach(o => {
         if (o.status !== '已取消') revenue += (o.totalPrice || 0);
@@ -338,13 +345,12 @@ function AdminDashboard({ db, setLoading }) {
 
   useEffect(() => { fetchOrders(); }, []);
 
-  // 新增：更新訂單狀態功能
   const updateOrderStatus = async (id, newStatus) => {
     if (!window.confirm(`確定將訂單狀態更改為「${newStatus}」？`)) return;
     setLoading(true);
     try {
       await updateDoc(doc(db, "bookings", id), { status: newStatus });
-      fetchOrders(); // 重新拉取以更新畫面與統計
+      fetchOrders(); 
     } catch (err) {
       alert("狀態更新失敗");
     }
@@ -362,7 +368,6 @@ function AdminDashboard({ db, setLoading }) {
 
   return (
     <div>
-      {/* 新增：營運統計儀表板 */}
       <div style={styles.statsGrid}>
         <div style={{...styles.statCard, backgroundColor: '#17a2b8'}}>
           總訂單數<br/><span style={{fontSize: '28px'}}>{stats.totalOrders} 筆</span>
@@ -402,7 +407,6 @@ function AdminDashboard({ db, setLoading }) {
                       {o.promoCode && <div style={{fontSize: '11px', color: '#dc3545'}}>代碼: {o.promoCode}</div>}
                     </td>
                     <td style={styles.td}>
-                      {/* 下拉選單直接切換狀態 */}
                       <select 
                         style={{ ...styles.input, width: 'auto', padding: '5px', margin: 0, fontWeight: 'bold', color: o.status === '已付款' ? 'green' : o.status === '已入住' ? 'blue' : 'red' }}
                         value={o.status}
