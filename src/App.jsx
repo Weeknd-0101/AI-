@@ -33,10 +33,10 @@ const styles = {
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
   button: { padding: '8px 16px', borderRadius: '8px', border: 'none', backgroundColor: '#0056b3', color: '#fff', cursor: 'pointer', fontWeight: 'bold' },
   buttonDanger: { backgroundColor: '#dc3545' },
+  buttonWarning: { backgroundColor: '#ffc107', color: '#000' }, // 新增警告按鈕顏色
   card: { backgroundColor: '#fff', borderRadius: '12px', padding: '20px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', marginBottom: '20px' },
   input: { width: '100%', padding: '10px', margin: '8px 0', borderRadius: '8px', border: '1px solid #ccc', boxSizing: 'border-box' },
   
-  // 促銷區塊樣式 (已保留)
   promoBox: { backgroundColor: '#fff3cd', color: '#856404', border: '1px solid #ffeeba', borderRadius: '8px', padding: '15px', marginBottom: '20px' },
   promoTitle: { margin: '0 0 10px 0', fontSize: '16px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' },
   promoTag: { backgroundColor: '#dc3545', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' },
@@ -104,6 +104,11 @@ function CustomerView({ db, setLoading }) {
   const [chatHistory, setChatHistory] = useState([{ role: 'ai', text: '您好！我是 AI 客服。想知道房價或隱藏優惠嗎？' }]);
   const [chatInput, setChatInput] = useState('');
   const [paymentStep, setPaymentStep] = useState(false);
+  
+  // 恢復查詢訂單狀態
+  const [queryPhone, setQueryPhone] = useState('');
+  const [queryResults, setQueryResults] = useState([]);
+  const [hasQueried, setHasQueried] = useState(false);
 
   useEffect(() => { setRoomStatus(null); }, [form.dateIn, form.dateOut, form.roomType]);
 
@@ -112,27 +117,14 @@ function CustomerView({ db, setLoading }) {
     const d1 = new Date(form.dateIn);
     const d2 = new Date(form.dateOut);
     const nights = Math.ceil((d2.getTime() - d1.getTime()) / (1000 * 3600 * 24));
-    
     if (nights <= 0) return { nights: 0, base: 0, discount: 0, total: 0, msg: '' };
-
     const basePrice = ROOM_INFO[form.roomType].price * nights;
-    let discountAmt = 0;
-    let discountMsg = '';
-
+    let discountAmt = 0; let discountMsg = '';
     if (form.promoCode === 'SUMMER88') {
-      if (form.roomType === '家庭包棟') {
-        discountAmt = Math.round(basePrice * 0.12);
-        discountMsg = '✅ 已套用暑期 88 折優惠';
-      } else {
-        discountMsg = '❌ 此優惠碼僅限家庭包棟使用';
-      }
-    } else if (form.promoCode === 'AI500') {
-      discountAmt = 500;
-      discountMsg = '✅ 已套用 AI 專屬 500 元折抵';
-    } else if (form.promoCode.length > 0) {
-      discountMsg = '❌ 無效的優惠代碼';
-    }
-
+      if (form.roomType === '家庭包棟') { discountAmt = Math.round(basePrice * 0.12); discountMsg = '✅ 已套用暑期 88 折優惠'; } 
+      else { discountMsg = '❌ 此優惠碼僅限家庭包棟使用'; }
+    } else if (form.promoCode === 'AI500') { discountAmt = 500; discountMsg = '✅ 已套用 AI 專屬 500 元折抵'; } 
+    else if (form.promoCode.length > 0) { discountMsg = '❌ 無效的優惠代碼'; }
     let total = basePrice - discountAmt;
     if (total < 0) total = 0;
     return { nights, base: basePrice, discount: discountAmt, total, msg: discountMsg };
@@ -145,16 +137,11 @@ function CustomerView({ db, setLoading }) {
     if (priceData.nights <= 0) return alert('退房日期必須晚於入住日期');
     setRoomStatus('checking');
     try {
-      const q = query(collection(db, "bookings"), 
-        where("roomType", "==", form.roomType), 
-        where("dateIn", "==", form.dateIn),
-        where("status", "in", ["已付款", "已入住"])
-      );
+      const q = query(collection(db, "bookings"), where("roomType", "==", form.roomType), where("dateIn", "==", form.dateIn), where("status", "in", ["已付款", "已入住"]));
       const snapshot = await getDocs(q);
       setRoomStatus(!snapshot.empty ? 'full' : 'available');
     } catch(err) {
-      alert("查詢失敗，請檢查網路狀態。");
-      setRoomStatus(null);
+      alert("查詢失敗，請檢查網路狀態。"); setRoomStatus(null);
     }
   };
 
@@ -166,33 +153,23 @@ function CustomerView({ db, setLoading }) {
   };
 
   const handleMockPayment = async (isSuccess) => {
-    if (!isSuccess) {
-      setPaymentStep(false);
-      return alert('已取消付款');
-    }
+    if (!isSuccess) { setPaymentStep(false); return alert('已取消付款'); }
     setLoading(true);
     try {
       await addDoc(collection(db, "bookings"), {
-        ...form,
-        nights: priceData.nights,
-        totalPrice: priceData.total,
-        status: '已付款', 
-        timestamp: new Date().toISOString()
+        ...form, nights: priceData.nights, totalPrice: priceData.total, status: '已付款', timestamp: new Date().toISOString()
       });
       alert('付款成功！訂單已成立。');
       setForm({ dateIn: '', dateOut: '', roomType: '標準雙人房', name: '', phone: '', paymentMethod: '信用卡', promoCode: '' });
-      setPaymentStep(false);
-      setRoomStatus(null);
-    } catch (error) {
-      alert('系統寫入錯誤。');
-    }
+      setPaymentStep(false); setRoomStatus(null);
+      setQueryResults([]); setHasQueried(false); // 重置查詢區
+    } catch (error) { alert('系統寫入錯誤。'); }
     setLoading(false);
   };
 
   const sendChatMessage = () => {
     if (!chatInput.trim()) return;
-    const newHistory = [...chatHistory, { role: 'user', text: chatInput }];
-    setChatHistory(newHistory);
+    setChatHistory(prev => [...prev, { role: 'user', text: chatInput }]);
     const currentInput = chatInput;
     setChatInput(''); 
     setTimeout(() => {
@@ -204,9 +181,35 @@ function CustomerView({ db, setLoading }) {
     }, 1000); 
   };
 
+  // 執行訂單查詢
+  const handleQueryOrder = async (e) => {
+    e.preventDefault();
+    if (!queryPhone.trim()) return alert('請輸入聯絡電話');
+    setLoading(true); setHasQueried(true);
+    try {
+      const q = query(collection(db, "bookings"), where("phone", "==", queryPhone));
+      const snapshot = await getDocs(q);
+      setQueryResults(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    } catch (err) { alert("查詢失敗。"); }
+    setLoading(false);
+  };
+
+  // 軟性取消申請邏輯
+  const handleCancelRequest = (order) => {
+    const today = new Date();
+    const checkInDate = new Date(order.dateIn);
+    // 計算距離入住日還有幾天 (毫秒轉天數)
+    const daysUntilCheckIn = Math.ceil((checkInDate.getTime() - today.getTime()) / (1000 * 3600 * 24));
+
+    if (daysUntilCheckIn >= 3) {
+      alert(`【申請取消受理】\n\n您的入住日期為 ${order.dateIn}，符合入住 3 天前可取消之規定。\n\n為保障您的退款安全與核對身分，請截圖本畫面並點擊下方連結加入官方 Line 辦理退費：\nhttps://line.me/ti/p/fake-line-id`);
+    } else {
+      alert(`【無法取消】\n\n您的入住日期為 ${order.dateIn}，距離今日已不足 3 天。\n根據民宿退費規定，當前已無法取消訂單與退費，敬請見諒。`);
+    }
+  };
+
   return (
     <div>
-      {/* 恢復：促銷橫幅區塊 */}
       <div style={styles.promoBox}>
         <h3 style={styles.promoTitle}>🎉 本月限定優惠活動 <span style={styles.promoTag}>HOT</span></h3>
         <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '14px', lineHeight: '1.6' }}>
@@ -234,14 +237,8 @@ function CustomerView({ db, setLoading }) {
           {!paymentStep ? (
             <form onSubmit={handleBookingInit}>
                <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
-                 <div style={{ flex: 1 }}>
-                   <label style={{ fontSize: '12px', color: '#666' }}>入住日期</label>
-                   <input type="date" style={styles.input} value={form.dateIn} onChange={e => setForm({...form, dateIn: e.target.value})} required />
-                 </div>
-                 <div style={{ flex: 1 }}>
-                   <label style={{ fontSize: '12px', color: '#666' }}>退房日期</label>
-                   <input type="date" style={styles.input} value={form.dateOut} onChange={e => setForm({...form, dateOut: e.target.value})} required />
-                 </div>
+                 <div style={{ flex: 1 }}><label style={{ fontSize: '12px', color: '#666' }}>入住日期</label><input type="date" style={styles.input} value={form.dateIn} onChange={e => setForm({...form, dateIn: e.target.value})} required /></div>
+                 <div style={{ flex: 1 }}><label style={{ fontSize: '12px', color: '#666' }}>退房日期</label><input type="date" style={styles.input} value={form.dateOut} onChange={e => setForm({...form, dateOut: e.target.value})} required /></div>
                </div>
 
                <div style={styles.roomGrid}>
@@ -249,9 +246,7 @@ function CustomerView({ db, setLoading }) {
                    <div key={type} style={{ ...styles.roomCard, ...(form.roomType === type ? styles.roomCardSelected : {}) }} onClick={() => setForm({...form, roomType: type})}>
                      <div style={{...styles.roomImg, backgroundColor: info.imgColor}}>{type}</div>
                      <div style={styles.roomContent}>
-                       <h4 style={styles.roomTitle}>{type}</h4>
-                       <div style={{ color: '#dc3545', fontWeight: 'bold', fontSize: '14px', marginBottom: '5px' }}>NT$ {info.price} /晚</div>
-                       <p style={styles.roomDesc}>{info.desc}</p>
+                       <h4 style={styles.roomTitle}>{type}</h4><div style={{ color: '#dc3545', fontWeight: 'bold', fontSize: '14px', marginBottom: '5px' }}>NT$ {info.price} /晚</div><p style={styles.roomDesc}>{info.desc}</p>
                      </div>
                    </div>
                  ))}
@@ -265,34 +260,26 @@ function CustomerView({ db, setLoading }) {
 
                <label style={{ fontSize: '12px', color: '#666' }}>優惠代碼 (輸入即自動試算)</label>
                <input type="text" placeholder="例: SUMMER88 或 AI500" style={styles.input} value={form.promoCode} onChange={e => setForm({...form, promoCode: e.target.value.toUpperCase()})} />
-               {priceData.msg && (
-                 <div style={{ fontSize: '12px', color: priceData.msg.includes('✅') ? '#28a745' : '#dc3545', marginTop: '-5px', marginBottom: '10px', fontWeight: 'bold' }}>
-                   {priceData.msg}
-                 </div>
-               )}
+               {priceData.msg && <div style={{ fontSize: '12px', color: priceData.msg.includes('✅') ? '#28a745' : '#dc3545', marginTop: '-5px', marginBottom: '10px', fontWeight: 'bold' }}>{priceData.msg}</div>}
 
                <div style={{...styles.priceBoard, backgroundColor: priceData.discount > 0 ? '#e8f5e9' : '#f8f9fa', borderColor: priceData.discount > 0 ? '#c8e6c9' : '#ddd'}}>
-                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                   <span>住宿天數：</span><span>{priceData.nights} 晚</span>
-                 </div>
-                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                   <span>原價小計：</span><span>NT$ {priceData.base.toLocaleString()}</span>
-                 </div>
-                 {priceData.discount > 0 && (
-                   <div style={{ display: 'flex', justifyContent: 'space-between', color: '#28a745', marginBottom: '5px', fontWeight: 'bold' }}>
-                     <span>優惠折抵 ({form.promoCode})：</span><span>- NT$ {priceData.discount.toLocaleString()}</span>
-                   </div>
-                 )}
+                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}><span>住宿天數：</span><span>{priceData.nights} 晚</span></div>
+                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}><span>原價小計：</span><span>NT$ {priceData.base.toLocaleString()}</span></div>
+                 {priceData.discount > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', color: '#28a745', marginBottom: '5px', fontWeight: 'bold' }}><span>優惠折抵 ({form.promoCode})：</span><span>- NT$ {priceData.discount.toLocaleString()}</span></div>}
                  <hr style={{ border: '0', borderTop: '1px solid #ccc', margin: '10px 0' }} />
-                 <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '16px' }}>
-                   <span>結帳總額：</span><span style={{ color: '#0056b3', fontSize: '18px' }}>NT$ {priceData.total.toLocaleString()}</span>
-                 </div>
+                 <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '16px' }}><span>結帳總額：</span><span style={{ color: '#0056b3', fontSize: '18px' }}>NT$ {priceData.total.toLocaleString()}</span></div>
                </div>
 
                <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
                  <div style={{ flex: 1 }}><input type="text" placeholder="訂購人姓名" style={styles.input} value={form.name} onChange={e => setForm({...form, name: e.target.value})} required /></div>
                  <div style={{ flex: 1 }}><input type="text" placeholder="聯絡電話" style={styles.input} value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} required /></div>
                </div>
+               
+               <label style={{ fontSize: '12px', color: '#666' }}>付款方式</label>
+               <select style={styles.input} value={form.paymentMethod} onChange={e => setForm({...form, paymentMethod: e.target.value})}>
+                  <option value="信用卡">信用卡</option>
+                  <option value="LINE Pay">LINE Pay</option>
+               </select>
 
                <button type="submit" style={{...styles.button, width: '100%', marginTop: '10px', backgroundColor: roomStatus === 'available' ? '#0056b3' : '#ccc'}} disabled={roomStatus !== 'available'}>
                  {roomStatus === 'available' ? '確認金額無誤並前往結帳' : '請先完成空房檢查'}
@@ -312,6 +299,55 @@ function CustomerView({ db, setLoading }) {
           )}
         </div>
       </div>
+
+      {/* 恢復並升級：訂單查詢系統 (加入軟性取消功能) */}
+      <div style={styles.card}>
+        <h3>訂單查詢與申請取消</h3>
+        <form onSubmit={handleQueryOrder} style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
+          <input type="text" placeholder="請輸入聯絡電話 (例: 0912345678)" style={{ ...styles.input, margin: 0, flex: 1 }} value={queryPhone} onChange={e => setQueryPhone(e.target.value)} />
+          <button type="submit" style={styles.button}>查詢我的訂單</button>
+        </form>
+        {hasQueried && queryResults.length === 0 && <div style={{ textAlign: 'center', color: '#888' }}>查無訂房紀錄。</div>}
+        {queryResults.length > 0 && (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={styles.table}>
+              <thead>
+                <tr>
+                  <th style={styles.th}>入住 / 退房日期</th>
+                  <th style={styles.th}>房型 (天數)</th>
+                  <th style={styles.th}>總金額</th>
+                  <th style={styles.th}>狀態</th>
+                  <th style={styles.th}>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {queryResults.map(o => {
+                  const isCancelled = o.status === '已取消';
+                  return (
+                    <tr key={o.id} style={{ opacity: isCancelled ? 0.6 : 1 }}>
+                      <td style={styles.td}>{o.dateIn} ~ {o.dateOut}</td>
+                      <td style={styles.td}>{o.roomType} ({o.nights}晚)</td>
+                      <td style={styles.td}>NT$ {o.totalPrice?.toLocaleString() || '---'}</td>
+                      <td style={styles.td}><strong style={{ color: o.status === '已付款' ? 'green' : o.status === '已入住' ? 'blue' : 'red' }}>{o.status}</strong></td>
+                      <td style={styles.td}>
+                        {!isCancelled && (
+                          <button 
+                            style={{...styles.button, ...styles.buttonWarning, padding: '4px 8px'}} 
+                            onClick={() => handleCancelRequest(o)}
+                          >
+                            申請取消
+                          </button>
+                        )}
+                        {isCancelled && <span style={{fontSize: '12px', color: '#666'}}>無可執行操作</span>}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -330,16 +366,10 @@ function AdminDashboard({ db, setLoading }) {
       const snapshot = await getDocs(q);
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setOrders(data);
-      
       let revenue = 0;
-      data.forEach(o => {
-        if (o.status !== '已取消') revenue += (o.totalPrice || 0);
-      });
+      data.forEach(o => { if (o.status !== '已取消') revenue += (o.totalPrice || 0); });
       setStats({ totalOrders: data.length, validRevenue: revenue });
-
-    } catch (error) {
-      alert("讀取失敗，請確認資料庫連線。");
-    }
+    } catch (error) { alert("讀取失敗，請確認資料庫連線。"); }
     setLoading(false);
   };
 
@@ -351,9 +381,7 @@ function AdminDashboard({ db, setLoading }) {
     try {
       await updateDoc(doc(db, "bookings", id), { status: newStatus });
       fetchOrders(); 
-    } catch (err) {
-      alert("狀態更新失敗");
-    }
+    } catch (err) { alert("狀態更新失敗"); }
     setLoading(false);
   };
 
@@ -369,12 +397,8 @@ function AdminDashboard({ db, setLoading }) {
   return (
     <div>
       <div style={styles.statsGrid}>
-        <div style={{...styles.statCard, backgroundColor: '#17a2b8'}}>
-          總訂單數<br/><span style={{fontSize: '28px'}}>{stats.totalOrders} 筆</span>
-        </div>
-        <div style={{...styles.statCard, backgroundColor: '#28a745'}}>
-          預估總營收 (排除取消)<br/><span style={{fontSize: '28px'}}>NT$ {stats.validRevenue.toLocaleString()}</span>
-        </div>
+        <div style={{...styles.statCard, backgroundColor: '#17a2b8'}}>總訂單數<br/><span style={{fontSize: '28px'}}>{stats.totalOrders} 筆</span></div>
+        <div style={{...styles.statCard, backgroundColor: '#28a745'}}>預估總營收 (排除取消)<br/><span style={{fontSize: '28px'}}>NT$ {stats.validRevenue.toLocaleString()}</span></div>
       </div>
 
       <div style={styles.card}>
@@ -396,30 +420,16 @@ function AdminDashboard({ db, setLoading }) {
                 const isCancelled = o.status === '已取消';
                 return (
                   <tr key={o.id} style={{ opacity: isCancelled ? 0.6 : 1, backgroundColor: isCancelled ? '#f8f9fa' : 'transparent' }}>
-                    <td style={styles.td}>
-                      <div style={{fontSize: '11px', color: '#888'}}>{new Date(o.timestamp).toLocaleString()}</div>
-                      {o.dateIn} ~ {o.dateOut}
-                    </td>
+                    <td style={styles.td}><div style={{fontSize: '11px', color: '#888'}}>{new Date(o.timestamp).toLocaleString()}</div>{o.dateIn} ~ {o.dateOut}</td>
                     <td style={styles.td}>{o.roomType}</td>
                     <td style={styles.td}>{o.name}<br/><span style={{fontSize: '12px'}}>{o.phone}</span></td>
+                    <td style={styles.td}><strong style={{color: isCancelled ? '#888' : '#333'}}>NT$ {o.totalPrice?.toLocaleString() || 0}</strong>{o.promoCode && <div style={{fontSize: '11px', color: '#dc3545'}}>代碼: {o.promoCode}</div>}</td>
                     <td style={styles.td}>
-                      <strong style={{color: isCancelled ? '#888' : '#333'}}>NT$ {o.totalPrice?.toLocaleString() || 0}</strong>
-                      {o.promoCode && <div style={{fontSize: '11px', color: '#dc3545'}}>代碼: {o.promoCode}</div>}
-                    </td>
-                    <td style={styles.td}>
-                      <select 
-                        style={{ ...styles.input, width: 'auto', padding: '5px', margin: 0, fontWeight: 'bold', color: o.status === '已付款' ? 'green' : o.status === '已入住' ? 'blue' : 'red' }}
-                        value={o.status}
-                        onChange={(e) => updateOrderStatus(o.id, e.target.value)}
-                      >
-                        <option value="已付款">已付款 (待入住)</option>
-                        <option value="已入住">已入住 (訂單完成)</option>
-                        <option value="已取消">已取消 (退款處理)</option>
+                      <select style={{ ...styles.input, width: 'auto', padding: '5px', margin: 0, fontWeight: 'bold', color: o.status === '已付款' ? 'green' : o.status === '已入住' ? 'blue' : 'red' }} value={o.status} onChange={(e) => updateOrderStatus(o.id, e.target.value)}>
+                        <option value="已付款">已付款 (待入住)</option><option value="已入住">已入住 (訂單完成)</option><option value="已取消">已取消 (退款處理)</option>
                       </select>
                     </td>
-                    <td style={styles.td}>
-                      <button style={{...styles.button, ...styles.buttonDanger, padding: '4px 8px'}} onClick={() => deleteOrder(o.id)}>刪除資料</button>
-                    </td>
+                    <td style={styles.td}><button style={{...styles.button, ...styles.buttonDanger, padding: '4px 8px'}} onClick={() => deleteOrder(o.id)}>刪除資料</button></td>
                   </tr>
                 );
               })}
